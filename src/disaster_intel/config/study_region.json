@@ -1,0 +1,38 @@
+{
+  "name": "coastal_karnataka_western_ghats",
+  "h3_resolution": 7,
+  "districts": [
+    "Dakshina Kannada",
+    "Udupi",
+    "Uttara Kannada",
+    "Kodagu",
+    "Chikkamagaluru"
+  ],
+  "description": "5-district study region covering coastal Karnataka and the Western Ghats catchment basin.",
+  "boundary_polygon": [
+    [14.90, 74.05],
+    [15.10, 74.25],
+    [15.35, 74.45],
+    [15.45, 74.75],
+    [15.15, 75.00],
+    [14.70, 75.05],
+    [14.30, 74.85],
+    [13.95, 75.20],
+    [13.65, 75.45],
+    [13.35, 75.52],
+    [13.10, 75.58],
+    [12.75, 75.82],
+    [12.40, 75.95],
+    [11.95, 75.92],
+    [12.00, 75.60],
+    [12.35, 75.20],
+    [12.60, 74.90],
+    [12.85, 74.82],
+    [13.01, 74.79],
+    [13.35, 74.68],
+    [13.80, 74.60],
+    [14.28, 74.42],
+    [14.65, 74.30],
+    [14.90, 74.05]
+  ]
+}

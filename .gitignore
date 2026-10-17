@@ -19,6 +19,9 @@ htmlcov/
 # Type checking
 .mypy_cache/
 
+# Local cache
+.cache/
+
 # IDE
 .vscode/
 .idea/

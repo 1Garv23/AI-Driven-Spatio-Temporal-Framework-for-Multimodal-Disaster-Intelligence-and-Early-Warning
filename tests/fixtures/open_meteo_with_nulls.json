@@ -1,0 +1,31 @@
+{
+  "latitude": 13.0,
+  "longitude": 74.8,
+  "generationtime_ms": 0.082,
+  "utc_offset_seconds": 0,
+  "timezone": "UTC",
+  "timezone_abbreviation": "UTC",
+  "elevation": 14.0,
+  "hourly_units": {
+    "time": "iso8601",
+    "precipitation": "mm",
+    "soil_moisture_0_to_7cm": "m³/m³",
+    "soil_moisture_7_to_28cm": "m³/m³",
+    "temperature_2m": "°C",
+    "wind_speed_10m": "km/h",
+    "surface_pressure": "hPa"
+  },
+  "hourly": {
+    "time": [
+      "2024-07-15T00:00",
+      "2024-07-15T01:00",
+      "2024-07-15T02:00"
+    ],
+    "precipitation": [0.0, null, 2.1],
+    "soil_moisture_0_to_7cm": [0.38, null, 0.40],
+    "soil_moisture_7_to_28cm": [0.35, 0.35, null],
+    "temperature_2m": [null, 25.8, 24.9],
+    "wind_speed_10m": [12.4, null, 18.0],
+    "surface_pressure": [1008.2, 1007.8, null]
+  }
+}

@@ -10,6 +10,13 @@ from disaster_intel.adapters import (
     SourceAdapter,
     SourceError,
 )
+from disaster_intel.bus import (
+    BufferFullError,
+    Bus,
+    BusError,
+    InMemoryBus,
+    Message,
+)
 from disaster_intel.clock import Clock, FakeClock, SystemClock
 from disaster_intel.discretizers import (
     FanOutTable,
@@ -37,6 +44,9 @@ __all__ = [
     "AdapterError",
     "AdapterMetrics",
     "AggMethod",
+    "BufferFullError",
+    "Bus",
+    "BusError",
     "CAPSeverity",
     "Clock",
     "CoastalGrid",
@@ -45,6 +55,8 @@ __all__ = [
     "Geometry",
     "GridNodeDiscretizer",
     "GridNodeGeometry",
+    "InMemoryBus",
+    "Message",
     "Observation",
     "OpenMeteoAdapter",
     "ParseError",

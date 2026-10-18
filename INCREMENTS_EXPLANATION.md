@@ -12,8 +12,9 @@ This document provides a comprehensive, function-by-function and module-by-modul
 4. [Increment 2: Multimodal Telemetry Data Model (`models.py`)](#4-increment-2-multimodal-telemetry-data-model-modelspy)
 5. [Increment 3: Telemetry Adapters & Deterministic Clock (`clock.py`, `adapters/`)](#5-increment-3-telemetry-adapters--deterministic-clock-clockpy-adapters)
 6. [Increment 4: Spatial Discretizers & Fan-Out Table (`discretizers.py`)](#6-increment-4-spatial-discretizers--fan-out-table-discretizerspy)
-7. [Current System Status & Test Suite Summary](#7-current-system-status--test-suite-summary)
-8. [Upcoming Increments Roadmap (Increments 5 to 14)](#8-upcoming-increments-roadmap-increments-5-to-14)
+7. [Increment 5: Streaming Bus Interface & In-Memory Bus (`bus/`)](#7-increment-5-streaming-bus-interface--in-memory-bus-bus)
+8. [Current System Status & Test Suite Summary](#8-current-system-status--test-suite-summary)
+9. [Upcoming Increments Roadmap (Increments 6 to 14)](#9-upcoming-increments-roadmap-increments-6-to-14)
 
 ---
 
@@ -157,28 +158,47 @@ Solve the mapping between incoming continuous spatial data and discrete H3 resol
 
 ---
 
-## 7. Current System Status & Test Suite Summary
+## 7. Increment 5: Streaming Bus Interface & In-Memory Bus (`bus/`)
+
+### Purpose
+Provides asynchronous decoupling between telemetry ingestion and downstream storage engines (ClickHouse, Redis). A unified streaming contract ensures messages are ingested reliably, ordered per cell, replayable on crash, and backpressured when buffers fill.
+
+### Key Classes ([`src/disaster_intel/bus/`](src/disaster_intel/bus/))
+
+#### 1. `Bus` Contract ([`src/disaster_intel/bus/base.py`](src/disaster_intel/bus/base.py))
+* **`Message`**: Immutable, slotted data structure containing `topic`, `key` (H3 cell ID), `payload`, integer `offset`, UTC `timestamp`, and `headers`.
+* **`publish(topic, key, payload)`**: Appends a message and returns its strictly monotonic integer offset.
+* **`poll(topic, group_id, max_messages, auto_commit)`**: Consumes messages starting from the consumer group's uncommitted read position.
+* **`commit(topic, group_id, offset)`**: Advances the persistent consumer offset for that specific group.
+* **`seek(topic, group_id, offset)`**: Allows moving the consumer group cursor backwards to any past offset for deterministic historical replaying.
+
+#### 2. `InMemoryBus` ([`src/disaster_intel/bus/memory.py`](src/disaster_intel/bus/memory.py))
+* **Thread-Safe**: Uses re-entrant locks (`threading.RLock`) to support multi-threaded producer and consumer pipelines.
+* **Per-Key Order Preservation**: Sequential observations for the same H3 cell are guaranteed to arrive in the exact order they were published.
+* **Independent Consumer Groups**: Different downstream workers (e.g., `group_id="clickhouse_cold_sink"` vs `group_id="redis_hot_sink"`) read from the same topic at their own independent speeds without interfering with each other's offsets.
+* **Backpressure (`BufferFullError`)**: Bounded queue protection (`max_queue_size`) ensures high-velocity telemetry floods do not exhaust system memory.
+* **Reusable Contract Test Suite (`tests/test_bus.py`)**: Defines `BaseBusContractTests` which tests `InMemoryBus` today and will verify `RedpandaBus` (Kafka) in container tests with identical behavior.
+
+---
+
+## 8. Current System Status & Test Suite Summary
 
 All quality gates pass with zero warnings or errors:
 
-* **Unit Test Suite**: **64 passed** in **1.68 seconds** (`pytest -m unit`).
+* **Unit Test Suite**: **72 passed** in **1.77 seconds** (`pytest -m unit`).
 * **Linter**: `ruff check src tests` (0 errors, clean).
-* **Formatter**: `ruff format --check src tests` (100% compliant).
-* **Type Checker**: `mypy src tests` (Strict typing verified across 16 source files).
+* **Formatter**: `ruff format --check src tests` (100% compliant across 20 source files).
+* **Type Checker**: `mypy src tests` (Strict typing verified across 20 source files).
 * **Live Integration**: `@pytest.mark.live` verified against Open-Meteo live API.
 
 ---
 
-## 8. Upcoming Increments Roadmap (Increments 5 to 14)
-
-### Increment 5: Bus Interface & InMemoryBus
-* Build the `Bus` protocol and in-memory streaming queue with consumer-group offset tracking, replay, backpressure, and one topic per source.
-* Write a reusable **contract test suite** that tests `InMemoryBus` now and tests `RedpandaBus` later with the exact same tests.
+## 9. Upcoming Increments Roadmap (Increments 6 to 14)
 
 ### Increment 6: Ingestion Pipeline CLI & Objective 1 Metrics
-* Connect Adapters $\rightarrow$ Spatial Discretizers $\rightarrow$ Bus $\rightarrow$ In-memory Sink.
-* Provide the `ingest` CLI command.
-* Compute Objective 1 metrics: p50/p95/p99 ingestion latency, completion rate, source vs parse failure attribution.
+* Connect Adapters $\rightarrow$ Spatial Discretizers $\rightarrow$ Bus $\rightarrow$ Sink.
+* Provide the `ingest` CLI command (`python -m disaster_intel.pipeline`).
+* Measure Objective 1 metrics: p50/p95/p99 ingestion latency, completion rate, source vs parse failure attribution.
 
 ### Increment 7: ClickHouse Cold Store
 * Observation tables with `ReplacingMergeTree` engines, Delta + ZSTD compression, deduplication on Part merges, and cold-correctness checks.
@@ -192,3 +212,4 @@ All quality gates pass with zero warnings or errors:
 
 ### Increments 10–14: Multimodal Fusion, Foundation Model & Warning Engine
 * Cross-attention spatio-temporal fusion, NASA Prithvi geospatial backbone, and early warning lead-time benchmarking.
+

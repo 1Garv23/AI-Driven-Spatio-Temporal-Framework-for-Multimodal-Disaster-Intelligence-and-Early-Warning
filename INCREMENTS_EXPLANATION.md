@@ -34,12 +34,12 @@ Every single feature in this project adheres to strict **Test-Driven Development
 Establish a production-grade Python package foundation with strict quality gates, dependency pinning, and container orchestration for hot/cold storage and message streaming.
 
 ### Key Components
-* **[`pyproject.toml`](file:///c:/Users/bajaj/OneDrive/Desktop/Documents/comp%20science/major%20project/AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning/pyproject.toml)**: Configures `hatchling` build system, Python >= 3.11, strict ruff linter (`select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]`), strict mypy type checking, and pytest marker definitions (`unit`, `contract`, `integration`, `perf`, `live`, `slow`).
-* **[`docker-compose.yml`](file:///c:/Users/bajaj/OneDrive/Desktop/Documents/comp%20science/major%20project/AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning/docker-compose.yml)**: Defines three core services:
+* **[`pyproject.toml`](pyproject.toml)**: Configures `hatchling` build system, Python >= 3.11, strict ruff linter (`select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF"]`), strict mypy type checking, and pytest marker definitions (`unit`, `contract`, `integration`, `perf`, `live`, `slow`).
+* **[`docker-compose.yml`](docker-compose.yml)**: Defines three core services:
   * **ClickHouse** (`clickhouse/clickhouse-server:24.3`): Columnar analytical database with `ReplacingMergeTree` for permanent, compressed observation storage.
   * **Redis** (`redis:7-alpine`): In-memory store holding a 7-day rolling window per cell for sub-millisecond AI model inferences.
   * **Redpanda** (`vectorized/redpanda:v23.3`): High-throughput, Kafka-compatible message bus for event ingestion.
-* **[`study_region.json`](file:///c:/Users/bajaj/OneDrive/Desktop/Documents/comp%20science/major%20project/AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning/src/disaster_intel/config/study_region.json)**: Exact latitude/longitude polygon boundary enclosing Coastal Karnataka (Uttara Kannada, Udupi, Dakshina Kannada) and Western Ghats catchments (Shivamogga, Kodagu).
+* **[`study_region.json`](src/disaster_intel/config/study_region.json)**: Exact latitude/longitude polygon boundary enclosing Coastal Karnataka (Uttara Kannada, Udupi, Dakshina Kannada) and Western Ghats catchments (Shivamogga, Kodagu).
 
 ---
 
@@ -48,7 +48,7 @@ Establish a production-grade Python package foundation with strict quality gates
 ### Purpose
 Solves **Gap G1 (Spatial Resolution Mismatch)**. Satellite and weather models use rectangular lat/lon grids with distortion towards the poles, while ground stations are scattered points. Uber's **H3 hexagonal hierarchical spatial index** provides equal-area, distortion-minimized cells where every cell has exactly 6 equidistant neighbors.
 
-### Key Class: `CoastalGrid` ([`grid.py`](file:///c:/Users/bajaj/OneDrive/Desktop/Documents/comp%20science/major%20project/AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning/src/disaster_intel/grid.py))
+### Key Class: `CoastalGrid` ([`src/disaster_intel/grid.py`](src/disaster_intel/grid.py))
 * **Resolution 7 Standard**: Each cell has an area of **~5.16 km²** (diameter ~2.6 km). This resolution matches the physical scale of localized flash floods and landslide hillslopes while remaining computationally tractable.
 * **`self.cells`**: Precomputes and sorts a deterministic tuple of **5,930 H3 cells** completely covering the study region.
 * **`latlng_to_cell(lat, lng)`**: Maps any GPS point to its enclosing H3 cell in $O(1)$ time.
@@ -63,7 +63,7 @@ Solves **Gap G1 (Spatial Resolution Mismatch)**. Satellite and weather models us
 ### Purpose
 Provides strong typing, unit normalization, coordinate validation, and deduplication keys before any data enters storage or pipelines.
 
-### Key Classes ([`models.py`](file:///c:/Users/bajaj/OneDrive/Desktop/Documents/comp%20science/major%20project/AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning/src/disaster_intel/models.py))
+### Key Classes ([`src/disaster_intel/models.py`](src/disaster_intel/models.py))
 
 #### 1. Geometry Types
 * **`PointGeometry(lat, lon)`**: Represents a localized observation (e.g. USGS earthquake epicenter, rain gauge). Rejects out-of-range coordinates (`[-90, 90]`, `[-180, 180]`).
@@ -107,19 +107,19 @@ Isolate all external API interactions behind a clean interface, implement rate-l
 
 ### Key Components
 
-#### 1. Injected Clock Abstraction ([`clock.py`](file:///c:/Users/bajaj/OneDrive/Desktop/Documents/comp%20science/major%20project/AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning/src/disaster_intel/clock.py))
+#### 1. Injected Clock Abstraction ([`src/disaster_intel/clock.py`](src/disaster_intel/clock.py))
 * **`Clock` (Protocol)**: Defines `now() -> datetime` and `sleep(seconds: float) -> None`.
 * **`SystemClock`**: Production clock utilizing real wall time (`datetime.now(UTC)` and `time.sleep`).
 * **`FakeClock`**: Deterministic test clock. Calling `fake_clock.sleep(10.0)` does not pause execution for 10 seconds; instead, it advances internal simulated time instantly and records the sleep duration in `sleep_log`. This allows testing 10-second exponential backoffs in microseconds!
 
-#### 2. Base Adapter & Metrics ([`adapters/base.py`](file:///c:/Users/bajaj/OneDrive/Desktop/Documents/comp%20science/major%20project/AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning/src/disaster_intel/adapters/base.py))
+#### 2. Base Adapter & Metrics ([`src/disaster_intel/adapters/base.py`](src/disaster_intel/adapters/base.py))
 * **`AdapterMetrics`**: Tracks performance and attributes errors:
   * `requests_made`, `readings_produced`, `retries`.
   * `records_skipped`: Granular map of reasons (e.g. `{"null_hour": 6}`).
   * **Failure Attribution**: Distinguishes upstream network/source outages (`SourceError`, e.g. 503 or 429) from data corruption (`ParseError`, e.g. malformed JSON).
 * **`HttpTransport` & `MockHttpTransport`**: Transport protocol allowing tests to inject mock HTTP responses without network sockets.
 
-#### 3. Open-Meteo Weather Adapter ([`adapters/open_meteo.py`](file:///c:/Users/bajaj/OneDrive/Desktop/Documents/comp%20science/major%20project/AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning/src/disaster_intel/adapters/open_meteo.py))
+#### 3. Open-Meteo Weather Adapter ([`src/disaster_intel/adapters/open_meteo.py`](src/disaster_intel/adapters/open_meteo.py))
 * **Multi-Location Request Batching**: Free weather APIs have rate limits and call budgets. The adapter batches multiple coordinates into single requests (e.g. 50 locations per call).
 * **Exponential Backoff**: If an HTTP `429` (Too Many Requests) or `5xx` (Server Error) occurs, the adapter retries with exponential backoff ($t_{\text{sleep}} = t_{\text{initial}} \times 2^{\text{attempt}}$) via the injected clock.
 * **Null-Hour Skipping**: If a specific timestamp has missing data in the weather model (`null`), it is skipped safely and incremented in `metrics.records_skipped["null_hour"]` rather than crashing the pipeline.
@@ -132,7 +132,7 @@ Isolate all external API interactions behind a clean interface, implement rate-l
 ### Purpose
 Solve the mapping between incoming continuous spatial data and discrete H3 resolution-7 cells. Specifically optimizes raster weather ingestion so we **do not** call the weather API 5,930 times for 5,930 cells.
 
-### Key Classes ([`discretizers.py`](file:///c:/Users/bajaj/OneDrive/Desktop/Documents/comp%20science/major%20project/AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning/src/disaster_intel/discretizers.py))
+### Key Classes ([`src/disaster_intel/discretizers.py`](src/disaster_intel/discretizers.py))
 
 #### 1. `FanOutTable` (95% Call Reduction)
 * **The Problem**: Open-Meteo data is produced on a 0.1° grid (~11 km spacing). Our study region contains 5,930 H3 res-7 cells (~2.6 km diameter). Querying Open-Meteo once for every individual cell would waste thousands of redundant API requests.

@@ -243,30 +243,33 @@ class IngestionPipeline:
 
     def _drain_topic_to_sink(self, topic: str, arrival_time: datetime) -> None:
         """Drain all pending messages from a bus topic into the sink."""
-        messages = self.bus.poll(
-            topic=topic,
-            group_id=self.consumer_group,
-            max_messages=10000,
-            auto_commit=True,
-        )
+        while True:
+            messages = self.bus.poll(
+                topic=topic,
+                group_id=self.consumer_group,
+                max_messages=5000,
+                auto_commit=True,
+            )
+            if not messages:
+                break
 
-        obs_batch: list[Observation] = []
-        for msg in messages:
-            if isinstance(msg.payload, Observation):
-                obs = msg.payload
-            elif isinstance(msg.payload, dict):
-                obs = Observation.from_dict(msg.payload)
-            else:
-                continue
+            obs_batch: list[Observation] = []
+            for msg in messages:
+                if isinstance(msg.payload, Observation):
+                    obs = msg.payload
+                elif isinstance(msg.payload, dict):
+                    obs = Observation.from_dict(msg.payload)
+                else:
+                    continue
 
-            obs_batch.append(obs)
-            # Track end-to-end ingestion latency in milliseconds
-            latency = (arrival_time - obs.timestamp).total_seconds() * 1000.0
-            self.metrics.latencies_ms.append(max(0.0, latency))
+                obs_batch.append(obs)
+                # Track end-to-end ingestion latency in milliseconds
+                latency = (arrival_time - obs.timestamp).total_seconds() * 1000.0
+                self.metrics.latencies_ms.append(max(0.0, latency))
 
-        stored, dups = self.sink.write(obs_batch)
-        self.metrics.observations_stored += stored
-        self.metrics.duplicates_dropped += dups
+            stored, dups = self.sink.write(obs_batch)
+            self.metrics.observations_stored += stored
+            self.metrics.duplicates_dropped += dups
 
 
 def run_replay_fixture(

@@ -196,10 +196,30 @@ class TestFanOutTableAndGridNodeDiscretizer:
         )
         assert cache_file.is_file()
 
-        # 2. Re-load from cache
         fan_out_2 = FanOutTable.from_cache(cache_path=cache_file)
         assert fan_out_2.cell_to_node == fan_out_1.cell_to_node
         assert fan_out_2.unique_nodes == fan_out_1.unique_nodes
+
+    def test_grid_node_discretizer_handles_model_grid_coordinate_offsets(
+        self, coastal_grid: CoastalGrid
+    ) -> None:
+        """Weather model grid outputs may have small coordinate shifts (e.g. 12.0562, 75.6065)."""
+        discretizer = GridNodeDiscretizer(grid=coastal_grid)
+        ts = datetime(2024, 7, 15, 12, 0, tzinfo=UTC)
+
+        # 12.056239, 75.606476 snaps to 12.1, 75.6
+        reading = RawReading(
+            source="open-meteo",
+            variable="precipitation",
+            value=15.0,
+            timestamp=ts,
+            geometry=GridNodeGeometry(lat=12.056239, lon=75.606476, resolution_deg=0.1),
+            unit="mm",
+        )
+        obs = discretizer.discretize(reading)
+        assert len(obs) > 0
+        expected_cells = discretizer.fan_out.node_to_cells.get((12.1, 75.6), ())
+        assert len(obs) == len(expected_cells)
 
 
 # ── Polygon Discretizer Tests ───────────────────────────────────────

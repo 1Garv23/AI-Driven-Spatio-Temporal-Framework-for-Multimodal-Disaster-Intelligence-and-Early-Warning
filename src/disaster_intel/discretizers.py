@@ -196,7 +196,10 @@ class GridNodeDiscretizer:
         if not isinstance(reading.geometry, GridNodeGeometry):
             raise ValueError(f"Expected GridNodeGeometry, got {type(reading.geometry).__name__}")
 
-        node_coord = (round(reading.geometry.lat, 4), round(reading.geometry.lon, 4))
+        res = reading.geometry.resolution_deg or self.fan_out.resolution_deg
+        node_lat = round(round(reading.geometry.lat / res) * res, 4)
+        node_lon = round(round(reading.geometry.lon / res) * res, 4)
+        node_coord = (node_lat, node_lon)
         cells = self.fan_out.node_to_cells.get(node_coord, ())
 
         return [Observation.from_reading(reading, cell) for cell in cells]

@@ -408,36 +408,76 @@ class Observation:
         self.idempotency_key = idempotency_key
 
     @classmethod
-    def from_raw(
+    def from_reading(
         cls,
-        *,
+        reading: RawReading,
         cell: str,
-        source: str,
-        variable: str,
-        raw_value: float,
-        raw_unit: str,
-        timestamp: datetime,
         interval_hours: float = 1.0,
     ) -> Observation:
-        """Create an Observation by converting raw values to canonical units."""
-        if not math.isfinite(raw_value):
-            raise ValueError(f"Value must be finite, got {raw_value}")
-        if timestamp.tzinfo is None:
-            raise ValueError("Naive datetime is not allowed")
-
-        ts_utc = timestamp.astimezone(UTC)
-        converted_value, canonical_unit = convert_unit(
-            raw_value, raw_unit, variable, interval_hours
+        """Create an Observation directly from a RawReading and an H3 cell ID."""
+        return cls.from_raw(
+            cell=cell,
+            source=reading.source,
+            variable=reading.variable,
+            raw_value=reading.value,
+            raw_unit=reading.unit,
+            timestamp=reading.timestamp,
+            interval_hours=interval_hours,
         )
 
+    @classmethod
+    def from_raw(
+        cls,
+        reading_or_cell: RawReading | str | None = None,
+        cell: str | None = None,
+        *,
+        source: str = "",
+        variable: str = "",
+        raw_value: float = 0.0,
+        raw_unit: str = "",
+        timestamp: datetime | None = None,
+        interval_hours: float = 1.0,
+        **kwargs: Any,
+    ) -> Observation:
+        """Create an Observation by converting raw values to canonical units.
+
+        Supports:
+        - Observation.from_raw(reading, cell)
+        - Observation.from_raw(cell=..., source=..., variable=..., raw_value=..., timestamp=...)
+        """
+        if isinstance(reading_or_cell, RawReading):
+            target_cell = cell or kwargs.get("cell", "")
+            return cls.from_reading(
+                reading=reading_or_cell,
+                cell=target_cell,
+                interval_hours=interval_hours,
+            )
+
+        target_cell = str(reading_or_cell or cell or kwargs.get("cell", ""))
+        src = source or kwargs.get("source", "")
+        var = variable or kwargs.get("variable", "")
+        val = (
+            raw_value if ("raw_value" in kwargs or raw_value != 0.0) else kwargs.get("value", 0.0)
+        )
+        unit_str = raw_unit or kwargs.get("unit", "")
+        ts = timestamp or kwargs.get("timestamp")
+
+        if not math.isfinite(val):
+            raise ValueError(f"Value must be finite, got {val}")
+        if ts is None or ts.tzinfo is None:
+            raise ValueError("Naive datetime is not allowed")
+
+        ts_utc = ts.astimezone(UTC)
+        converted_value, canonical_unit = convert_unit(val, unit_str, var, interval_hours)
+
         # Deterministic idempotency key: hash of (cell, variable, source, timestamp_iso)
-        key_input = f"{cell}|{variable}|{source}|{ts_utc.isoformat()}"
+        key_input = f"{target_cell}|{var}|{src}|{ts_utc.isoformat()}"
         key = hashlib.sha256(key_input.encode("utf-8")).hexdigest()[:16]
 
         return cls(
-            cell=cell,
-            source=source,
-            variable=variable,
+            cell=target_cell,
+            source=src,
+            variable=var,
             value=converted_value,
             unit=canonical_unit,
             timestamp=ts_utc,

@@ -36,6 +36,36 @@ For the detailed 14-increment TDD roadmap (Increments 0 to 13), architectural co
 
 ---
 
+## ⚡ Quickstart (Windows / macOS / Linux)
+
+Anyone can clone and run this project in under a minute with zero platform-specific dependencies:
+
+### 1. Prerequisites
+* **Python 3.11+**
+* **[`uv`](https://docs.astral.sh/uv/)** (recommended) or standard `pip`
+* **Docker** (optional, only needed for containerized ClickHouse, Redis, and Redpanda)
+
+### 2. Setup in 3 Commands
+```bash
+# 1. Clone repository
+git clone https://github.com/tejas-bajaj/AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning.git
+cd AI-Driven-Spatio-Temporal-Framework-for-Multimodal-Disaster-Intelligence-and-Early-Warning
+
+# 2. Install dependencies (instant lockfile sync)
+uv sync
+# (Or using standard pip: pip install -e ".[dev]")
+
+# 3. Verify suite (runs 100% offline in < 2 seconds)
+uv run pytest -m unit
+```
+
+### 3. Start Local Storage Infrastructure (Optional)
+```bash
+docker compose up -d
+```
+
+---
+
 ## 👥 Team & Academic Context
 
 - **Institution:** National Institute of Technology Karnataka (NITK), Surathkal — Department of Information Technology

@@ -31,7 +31,8 @@ The framework projects multimodal physical telemetry (atmospheric, hydrological,
 
 For the detailed 14-increment TDD roadmap (Increments 0 to 13), architectural contracts, storage budgets, and evaluation metrics for Phase 1, see:
 
-👉 **[Phase 1 Design and TDD Plan (`plan.md`)](plan.md)**
+👉 **[Phase 1 Design and TDD Plan (`plan.md`)](plan.md)**  
+👉 **[Component & Increment Explanation Guide (`INCREMENTS_EXPLANATION.md`)](INCREMENTS_EXPLANATION.md)**
 
 ---
 

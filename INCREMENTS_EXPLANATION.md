@@ -181,27 +181,100 @@ Provides asynchronous decoupling between telemetry ingestion and downstream stor
 
 ---
 
-## 8. Current System Status & Test Suite Summary
+---
 
-All quality gates pass with zero warnings or errors:
+## 8. Increment 6: Ingestion Pipeline & Objective 1 Metrics (`pipeline.py`)
 
-* **Unit Test Suite**: **72 passed** in **1.77 seconds** (`pytest -m unit`).
-* **Linter**: `ruff check src tests` (0 errors, clean).
-* **Formatter**: `ruff format --check src tests` (100% compliant across 20 source files).
-* **Type Checker**: `mypy src tests` (Strict typing verified across 20 source files).
-* **Live Integration**: `@pytest.mark.live` verified against Open-Meteo live API.
+### Purpose
+Connects all components developed in Increments 2–5 into an end-to-end telemetry processing engine and fulfills **Objective 1** of the project:
+* Ingest multimodal environmental data with rigorous tracking of p50, p95, and p99 ingestion latency.
+* Guarantee high completion rate ($\ge 98\%$) with precise failure attribution (distinguishing remote source errors from local payload parse failures).
+* Enforce idempotent deduplication at the storage boundary.
+* Provide an offline fixture replay CLI (`ingest --replay`) and a live API ingestion pipeline (`ingest --live`).
+
+### End-to-End Data Flow
+
+```text
+[Raw Telemetry Payload] 
+        │
+        ▼
+[SourceAdapter] ──(parses & validates)──► [RawReading Stream]
+                                                 │
+                                                 ▼
+                                      [SpatialDiscretizer]
+                                                 │ (maps point/polygon/grid to H3 res-7)
+                                                 ▼
+                                        [Observation Stream]
+                                                 │
+                                                 ▼
+                                        [Streaming Bus]
+                                     (telemetry.{source} topic)
+                                                 │
+                                                 ▼
+                                         [Pipeline Drain]
+                                                 │ (tracks arrival time & latency)
+                                                 ▼
+                                        [Observation Sink]
+                                      (enforces idempotency)
+```
+
+### Key Classes & Functions ([`src/disaster_intel/pipeline.py`](src/disaster_intel/pipeline.py))
+
+#### 1. `calculate_percentiles(values, percentiles)`
+* Calculates exact mathematical percentiles ($p_{50}$, $p_{95}$, $p_{99}$) using linear interpolation.
+* Used to accurately measure latency distribution across thousands of processed observations.
+
+#### 2. `ObservationSink` Protocol & `InMemorySink`
+* **`ObservationSink`**: Storage abstraction adhered to by both in-memory testing sinks and production stores (ClickHouse cold store, Redis hot store).
+* **`InMemorySink`**:
+  * Stores observations keyed by `idempotency_key` (`sha256(source + variable + cell + timestamp)`).
+  * Returns `(stored_count, duplicates_count)`.
+  * Indexes observations by H3 cell for fast spatial querying.
+
+#### 3. `IngestionMetrics`
+* Real-time metrics collector tracking:
+  * `raw_readings_received`: Total incoming raw readings.
+  * `observations_produced`: Discretized cell observations generated.
+  * `observations_stored`: Unique observations successfully committed.
+  * `duplicates_dropped`: Duplicate records dropped via idempotency keys.
+  * `completion_rate`: Percent of attempted records successfully parsed and stored.
+  * `source_errors` vs `parse_errors`: Clear attribution of remote upstream failures vs local data format errors.
+  * `p50_latency_ms`, `p95_latency_ms`, `p99_latency_ms`: Real latency percentiles in milliseconds.
+  * `summary()`: Renders a clean ASCII summary table compatible with all operating systems and console encodings.
+
+#### 4. `IngestionPipeline`
+* Coordinates the complete flow:
+  1. Accepts batches of `RawReading` items or fetches them from an adapter.
+  2. Discretizes readings across the coastal H3 grid.
+  3. Publishes observations to per-source bus topics (`telemetry.<source>`).
+  4. Consumes published messages, computes end-to-end latency relative to clock time, and persists unique observations into the sink.
+
+#### 5. CLI (`ingest`)
+* Configured in `pyproject.toml` under `[project.scripts]`.
+* Replay mode: `uv run ingest --replay tests/fixtures/open_meteo_sample.json` (runs 100% offline).
+* Live mode: `uv run ingest --live --max-nodes 10` (fetches real weather data across study region grid nodes).
 
 ---
 
-## 9. Upcoming Increments Roadmap (Increments 6 to 14)
+## 9. Current System Status & Test Suite Summary
 
-### Increment 6: Ingestion Pipeline CLI & Objective 1 Metrics
-* Connect Adapters $\rightarrow$ Spatial Discretizers $\rightarrow$ Bus $\rightarrow$ Sink.
-* Provide the `ingest` CLI command (`python -m disaster_intel.pipeline`).
-* Measure Objective 1 metrics: p50/p95/p99 ingestion latency, completion rate, source vs parse failure attribution.
+All quality gates pass with zero warnings or errors:
 
-### Increment 7: ClickHouse Cold Store
-* Observation tables with `ReplacingMergeTree` engines, Delta + ZSTD compression, deduplication on Part merges, and cold-correctness checks.
+* **Unit Test Suite**: **79 passed** in **1.86 seconds** (`pytest -m unit`).
+* **Linter**: `ruff check src tests` (0 errors, 100% clean).
+* **Formatter**: `ruff format --check src tests` (100% compliant across 22 source files).
+* **Type Checker**: `mypy src tests` (Strict typing verified across 22 source files).
+* **Live Integration**: `@pytest.mark.live` verified against Open-Meteo live API.
+* **CLI Verified**: `ingest --replay` verified on recorded telemetry fixtures.
+
+---
+
+## 10. Upcoming Increments Roadmap (Increments 7 to 14)
+
+### Increment 7: ClickHouse Cold Store (Objective 2)
+* Observations table with `ReplacingMergeTree` engine, Delta + ZSTD compression.
+* Deduplication on part merges and cold-correctness checks (write-then-read equals reference copy).
+* H3 parent-cell aggregations verified against Python H3 library.
 
 ### Increment 8: Hourly Buckets & Rolling Windows
 * Incremental materialized views maintaining hourly aggregates (`SUM` for rain, `AVG` for soil moisture, `MAX` for wind/discharge).

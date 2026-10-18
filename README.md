@@ -57,6 +57,9 @@ uv sync
 
 # 3. Verify suite (runs 100% offline in < 2 seconds)
 uv run pytest -m unit
+
+# 4. Replay recorded telemetry fixture through ingestion pipeline
+uv run ingest --replay tests/fixtures/open_meteo_sample.json
 ```
 
 ### 3. Start Local Storage Infrastructure (Optional)

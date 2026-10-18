@@ -39,6 +39,14 @@ from disaster_intel.models import (
     Variable,
     VariableCatalog,
 )
+from disaster_intel.pipeline import (
+    IngestionMetrics,
+    IngestionPipeline,
+    InMemorySink,
+    ObservationSink,
+    calculate_percentiles,
+    run_replay_fixture,
+)
 
 __all__ = [
     "AdapterError",
@@ -56,8 +64,12 @@ __all__ = [
     "GridNodeDiscretizer",
     "GridNodeGeometry",
     "InMemoryBus",
+    "InMemorySink",
+    "IngestionMetrics",
+    "IngestionPipeline",
     "Message",
     "Observation",
+    "ObservationSink",
     "OpenMeteoAdapter",
     "ParseError",
     "PointDiscretizer",
@@ -72,5 +84,7 @@ __all__ = [
     "Variable",
     "VariableCatalog",
     "__version__",
+    "calculate_percentiles",
     "point_in_polygon",
+    "run_replay_fixture",
 ]

@@ -15,6 +15,10 @@ dependencies = [
     "httpx>=0.28.1",
 ]
 
+[project.scripts]
+ingest = "disaster_intel.pipeline:main"
+disaster-intel = "disaster_intel.pipeline:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",

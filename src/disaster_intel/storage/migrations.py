@@ -18,6 +18,13 @@ Schema decisions (plan.md §11 storage budget):
   (plan.md lists (cell, variable, time); ``source`` is added because two sources reporting
   the same variable at the same instant are different facts, not duplicates.)
 * ``PARTITION BY toYYYYMM(ts)`` monthly parts: cheap historical backfills and drops.
+
+Migration 2 (Increment 8) adds ``hourly_buckets``: one pre-aggregated row per
+(cell, variable, source, hour-ending bucket) so a rolling window is a combine of <= 168 rows
+instead of a scan of raw observations. It is a ``ReplacingMergeTree(version)``: ``ColdStore``
+recomputes every bucket a write touched from ``observations FINAL`` and inserts it with a
+newer ``version``, so duplicates, revised values and late arrivals can never double-count
+(a plain SummingMergeTree materialized view would add a duplicate insert's value twice).
 """
 
 from __future__ import annotations
@@ -62,6 +69,29 @@ CREATE TABLE IF NOT EXISTS {db}.observations
 ENGINE = ReplacingMergeTree
 PARTITION BY toYYYYMM(ts)
 ORDER BY (cell, variable, source, ts)
+""".strip(),
+            ),
+        ),
+        Migration(
+            version=2,
+            name="create_hourly_buckets",
+            statements=(
+                f"""
+CREATE TABLE IF NOT EXISTS {db}.hourly_buckets
+(
+    cell      UInt64               CODEC(Delta, ZSTD(3)),
+    variable  LowCardinality(String),
+    source    LowCardinality(String),
+    bucket    DateTime('UTC')      CODEC(DoubleDelta, ZSTD(3)),
+    n_obs     UInt32               CODEC(ZSTD(3)),
+    sum_value Float64              CODEC(Gorilla, ZSTD(3)),
+    min_value Float32              CODEC(Gorilla, ZSTD(3)),
+    max_value Float32              CODEC(Gorilla, ZSTD(3)),
+    version   UInt64               CODEC(DoubleDelta, ZSTD(3))
+)
+ENGINE = ReplacingMergeTree(version)
+PARTITION BY toYYYYMM(bucket)
+ORDER BY (cell, variable, source, bucket)
 """.strip(),
             ),
         ),

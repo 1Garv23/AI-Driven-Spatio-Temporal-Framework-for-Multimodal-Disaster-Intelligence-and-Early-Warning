@@ -37,10 +37,21 @@ from disaster_intel.storage.migrations import (
     get_migrations,
     validate_identifier,
 )
+from disaster_intel.windows import (
+    BUCKET_END_SQL,
+    HOUR,
+    WINDOW_HOURS,
+    Bucket,
+    WindowValue,
+    bucket_end,
+    floor_hour,
+    windows_from_buckets,
+)
 
 COLUMNS: tuple[str, ...] = ("cell", "variable", "source", "ts", "value")
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _ONE_MICROSECOND = timedelta(microseconds=1)
+_REFRESH_CELLS_PER_STATEMENT = 2_000  # keeps each statement far below max_query_size (256 KB)
 
 
 class ClickHouseClient(Protocol):
@@ -201,9 +212,11 @@ class ColdStore:
         database: str = "disaster_intel",
         catalog: VariableCatalog | None = None,
         batch_size: int = 10_000,
+        maintain_buckets: bool = True,
     ) -> None:
         if batch_size < 1:
             raise ValueError("batch_size must be >= 1")
+        self._maintain_buckets = maintain_buckets
         self._client = client
         self._database = validate_identifier(database)
         self._catalog = catalog or VariableCatalog.default()
@@ -272,7 +285,11 @@ class ColdStore:
     # ── writes ───────────────────────────────────────────────────────
 
     def write(self, observations: Sequence[Observation]) -> tuple[int, int]:
-        """Insert observations in batches. All are validated before any is inserted."""
+        """Insert observations in batches. All are validated before any is inserted.
+
+        Unless ``maintain_buckets=False`` (bulk backfill: call ``rebuild_buckets()`` once at
+        the end instead), every hourly bucket the write touched is then recomputed.
+        """
         rows = [observation_to_row(o, self._catalog) for o in observations]
         for start in range(0, len(rows), self._batch_size):
             self._client.insert(
@@ -280,11 +297,109 @@ class ColdStore:
                 rows[start : start + self._batch_size],
                 column_names=list(COLUMNS),
             )
+        if rows and self._maintain_buckets:
+            self._refresh_buckets(rows)
         return len(rows), 0
 
     def optimize(self) -> None:
         """Force a merge so duplicates are physically removed (tests, maintenance)."""
         self._client.command(f"OPTIMIZE TABLE {self._table} FINAL")
+
+    # ── hourly buckets & rolling windows (Increment 8) ───────────────
+
+    @property
+    def _bucket_table(self) -> str:
+        return f"{self._database}.hourly_buckets"
+
+    def _bucket_insert_sql(self, where: str) -> str:
+        """Recompute buckets from the DEDUPLICATED observations and insert them.
+
+        ``version`` is the server clock in nanoseconds, so a later recomputation always wins
+        in the ReplacingMergeTree (and reads use FINAL).
+        """
+        return (
+            f"INSERT INTO {self._bucket_table} "
+            "(cell, variable, source, bucket, n_obs, sum_value, min_value, max_value, version) "
+            f"SELECT cell, variable, source, {BUCKET_END_SQL} AS bucket, count(), sum(value), "
+            "min(value), max(value), toUInt64(toUnixTimestamp64Nano(now64(9))) "
+            f"FROM {self._table} FINAL WHERE {where} "
+            "GROUP BY cell, variable, source, bucket"
+        )
+
+    def _refresh_buckets(self, rows: Sequence[Sequence[Any]]) -> None:
+        """Recompute every bucket that ``rows`` can have changed (late data, duplicates, edits)."""
+        cells = sorted({int(r[0]) for r in rows})
+        variables = sorted({validate_identifier(str(r[1]), "variable") for r in rows})
+        ends = [bucket_end(r[3]) for r in rows]
+        lo, hi = _micros(min(ends) - HOUR), _micros(max(ends))  # (lo, hi]: ts of those buckets
+        quoted = ", ".join(f"'{v}'" for v in variables)
+        for i in range(0, len(cells), _REFRESH_CELLS_PER_STATEMENT):
+            chunk = ", ".join(str(c) for c in cells[i : i + _REFRESH_CELLS_PER_STATEMENT])
+            where = (
+                f"cell IN ({chunk}) AND variable IN ({quoted}) "
+                f"AND ts > fromUnixTimestamp64Micro({lo}, 'UTC') "
+                f"AND ts <= fromUnixTimestamp64Micro({hi}, 'UTC')"
+            )
+            self._client.command(self._bucket_insert_sql(where))
+
+    def rebuild_buckets(self) -> None:
+        """Recompute ALL buckets (after a ``maintain_buckets=False`` backfill, or to repair)."""
+        self._client.command(self._bucket_insert_sql("1"))
+
+    def read_buckets(
+        self,
+        cell: str,
+        start: datetime,
+        end: datetime,
+        source: str | None = None,
+    ) -> dict[str, dict[datetime, Bucket]]:
+        """``{variable: {bucket_end: Bucket}}`` for ``start < bucket <= end`` (hour-aligned).
+
+        Sources are merged unless ``source`` selects one.
+        """
+        if not h3.is_valid_cell(cell):
+            raise ValueError(f"Invalid H3 cell {cell!r}")
+        lo, hi = _micros(start) // 1_000_000, _micros(end) // 1_000_000
+        where = [
+            f"cell = {int(cell, 16)}",
+            f"bucket > toDateTime({lo}, 'UTC')",
+            f"bucket <= toDateTime({hi}, 'UTC')",
+        ]
+        params: dict[str, Any] = {}
+        if source is not None:
+            where.append("source = {source:String}")
+            params["source"] = source
+        sql = (
+            "SELECT variable, toUnixTimestamp(bucket) AS b, sum(n_obs), sum(sum_value), "
+            "min(min_value), max(max_value) "
+            f"FROM {self._bucket_table} FINAL WHERE {' AND '.join(where)} "
+            "GROUP BY variable, b"
+        )
+        result = self._client.query(sql, parameters=params or None)
+        buckets: dict[str, dict[datetime, Bucket]] = {}
+        for variable, b, n, total, minimum, maximum in result.result_rows:
+            buckets.setdefault(str(variable), {})[_EPOCH + timedelta(seconds=int(b))] = Bucket(
+                n=int(n), total=float(total), minimum=float(minimum), maximum=float(maximum)
+            )
+        return buckets
+
+    def windows(
+        self,
+        cell: str,
+        as_of: datetime,
+        source: str | None = None,
+        window_hours: Mapping[str, int] | None = None,
+    ) -> dict[str, dict[str, WindowValue]]:
+        """Rolling windows (1h/6h/24h/72h/7d) for every catalog variable of one cell.
+
+        ``{variable: {window: WindowValue(value, observed_hours, hours)}}``; ``.coverage`` is
+        the observed fraction of the window. See ``disaster_intel.windows`` for the exact
+        bucket/window conventions.
+        """
+        hours = dict(WINDOW_HOURS if window_hours is None else window_hours)
+        end = floor_hour(as_of)
+        buckets = self.read_buckets(cell, end - max(hours.values()) * HOUR, end, source)
+        return windows_from_buckets(buckets, end, self._catalog, hours)
 
     # ── reads (all deduplicate with FINAL) ───────────────────────────
 

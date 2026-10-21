@@ -281,6 +281,31 @@ First half of Objective 2: the permanent, compressed, deduplicated record of eve
 
 ---
 
+## 8c. Increment 8: Hourly Buckets & Rolling Windows (`windows.py`, `storage/`)
+
+### Purpose
+Second step of Objective 2: turn the raw cold-store observations into rolling-window features (1h, 6h, 24h, 72h, 7d) that are correct, reproducible for any past time, and cheap to read.
+
+### Key Components
+* **[`windows.py`](src/disaster_intel/windows.py)** (pure Python, no database): `bucket_end`, `floor_hour`, `Bucket`, `bucketize`, `combine_buckets`, `windows_from_buckets`, and the slow oracle `reference_windows`. The Redis hot tier (Increment 9) reuses `Bucket` / `combine_buckets`.
+* **Migration 2**: `hourly_buckets` (`ReplacingMergeTree(version)`), one row per (cell, variable, source, hour-ending bucket) with `n_obs`, `sum_value`, `min_value`, `max_value`.
+* **`ColdStore`**: `write()` recomputes every bucket it touched from `observations FINAL`; `read_buckets()`, `windows(cell, as_of)`, `rebuild_buckets()`; `maintain_buckets=False` for bulk backfill.
+
+### Conventions (pinned by tests)
+* Bucket `B` holds observations with `B - 1h < ts <= B` (hour-ending). A window is the last N buckets ending at `as_of` floored to the hour, so a window computed today for time T equals the one computed live at T.
+* SUM for rainfall, AVG (sum / count) for soil moisture/temperature/pressure, MAX for wind/discharge/seismic/CAP.
+* `WindowValue(value, observed_hours, hours)`; `coverage = observed_hours / hours`; no data means `value=None`, never 0.
+
+### Deviation from plan.md (and why)
+plan.md suggests an incremental materialized view. A plain MV adds every *insert*, so an at-least-once duplicate or a revised value would be counted twice (ReplacingMergeTree only dedups on merge). Buckets are instead recomputed from the deduplicated observations for exactly the (cells, variables, hours) a write touched, which also handles late arrivals. The "cheap combine of <= 168 buckets at read time" design is unchanged.
+
+### Tests
+* `tests/test_windows_unit.py`: conventions, coverage, hypothesis differential test (buckets vs oracle), refresh SQL, FINAL on reads, migration 2.
+* `tests/test_windows_integration.py`: ClickHouse windows == oracle for every variable/window, late observation, duplicates/revisions, rollback equality, backfill mode.
+* `tests/test_buckets_perf.py`: bucket-table bytes/row and `windows()` read latency.
+
+---
+
 ## 9. Current System Status & Test Suite Summary
 
 All quality gates pass with zero warnings or errors:
@@ -298,7 +323,7 @@ All quality gates pass with zero warnings or errors:
 
 ### Increment 7: ClickHouse Cold Store (Objective 2) - DONE (see section 8b)
 
-### Increment 8: Hourly Buckets & Rolling Windows
+### Increment 8: Hourly Buckets & Rolling Windows - DONE (see section 8c)
 * Incremental materialized views maintaining hourly aggregates (`SUM` for rain, `AVG` for soil moisture, `MAX` for wind/discharge).
 * Rolling windows: 1h, 6h, 24h, 72h, 7d.
 

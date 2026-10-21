@@ -62,9 +62,11 @@ uv run pytest -m unit
 uv run ingest --replay tests/fixtures/open_meteo_sample.json
 ```
 
-### 3. Start Local Storage Infrastructure (Optional)
+### 3. Start Local Storage Infrastructure (needed for Increment 7+ integration tests)
 ```bash
-docker compose up -d
+docker compose up -d --wait
+uv run pytest -m integration      # ClickHouse cold store (Increment 7), service health
+uv run pytest -m perf -s          # storage-budget test; prints bytes per row
 ```
 
 ---

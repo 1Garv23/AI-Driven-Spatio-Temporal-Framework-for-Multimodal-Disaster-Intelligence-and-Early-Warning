@@ -7,7 +7,15 @@ services:
     ports:
       - "8123:8123"   # HTTP interface
       - "9000:9000"   # Native TCP
-    mem_limit: 512m
+    # 1 GB, not 512 MB: the Increment 7 budget test (a full day for every cell) peaks above
+    # 512 MB on the server even with 10k-row insert batches.
+    mem_limit: 1g
+    environment:
+      # The image's passwordless `default` user only accepts connections from inside the
+      # container, so host-side tests/code log in as this dev user (local development only).
+      CLICKHOUSE_USER: ${CLICKHOUSE_USER:-disaster}
+      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:-disaster}
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
     ulimits:
       nofile:
         soft: 262144

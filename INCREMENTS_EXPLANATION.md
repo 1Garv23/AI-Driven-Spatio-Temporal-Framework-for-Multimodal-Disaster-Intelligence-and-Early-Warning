@@ -256,6 +256,31 @@ Connects all components developed in Increments 2–5 into an end-to-end telemet
 
 ---
 
+## 8b. Increment 7: ClickHouse Cold Store (`storage/`)
+
+### Purpose
+First half of Objective 2: the permanent, compressed, deduplicated record of every `Observation`, from which any past state can later be reproduced (Increments 8-10).
+
+### Key Components ([`src/disaster_intel/storage/`](src/disaster_intel/storage/))
+* **`migrations.py`**: versioned, idempotent DDL. Every statement is `IF NOT EXISTS` and applied versions are recorded in `schema_migrations`, so `migrate()` a second time returns `[]`.
+* **`observations` table**: `ReplacingMergeTree`, `PARTITION BY toYYYYMM(ts)`, `ORDER BY (cell, variable, source, ts)`.
+  * `cell UInt64` (H3 index as integer), `variable`/`source` `LowCardinality(String)`, `ts DateTime64(6,'UTC')`, `value Float32`, with Delta / DoubleDelta / Gorilla + ZSTD codecs.
+  * **No `unit` column** (a function of `variable` via `VariableCatalog`) and **no `idempotency_key` column** (a hash of the other columns; recomputed on read). Both save bytes.
+* **`ColdStore`** ([`cold.py`](src/disaster_intel/storage/cold.py)): `migrate()`, `write()`, `read_cell()`, `read_all()`, `count()`, `parent_cells()`, `count_by_parent()`, `storage_stats()`, `cold_correctness()`.
+* **Reads always deduplicate (`FINAL`)**: `ReplacingMergeTree` only removes duplicates when parts merge. `raw_count()` is the one deliberate non-deduplicated query; a test pins the pre-merge behaviour with `SYSTEM STOP MERGES`.
+* **Float32**: values read back equal `to_float32(original)`; the cold-correctness metric compares after that quantisation.
+
+### Bugs found and fixed on the way (regression tests added)
+* Catalog said `wind_speed` is `m/s` while the Open-Meteo adapter emits `km/h` -> catalog now `km/h`.
+* `convert_unit` lower-cased pass-through units, so pressure observations carried `hpa` instead of `hPa` -> canonical spelling is kept.
+
+### Tests
+* `tests/test_cold_store_unit.py` (unit, fake client): row mapping, validation-before-insert, batching, idempotent migrations, schema/codecs, every read uses `FINAL`.
+* `tests/test_cold_store_integration.py` (real ClickHouse): cold-correctness = 100%, duplicates collapse, ClickHouse `h3ToParent` equals Python `h3` on 1,000 random cells (res 4/5/6), migrations idempotent.
+* `tests/test_cold_store_perf.py`: one synthetic day for all 5,930 cells x 6 hourly variables; budget measured from `system.parts` (first measurement 3.31 B/row compressed).
+
+---
+
 ## 9. Current System Status & Test Suite Summary
 
 All quality gates pass with zero warnings or errors:
@@ -271,10 +296,7 @@ All quality gates pass with zero warnings or errors:
 
 ## 10. Upcoming Increments Roadmap (Increments 7 to 14)
 
-### Increment 7: ClickHouse Cold Store (Objective 2)
-* Observations table with `ReplacingMergeTree` engine, Delta + ZSTD compression.
-* Deduplication on part merges and cold-correctness checks (write-then-read equals reference copy).
-* H3 parent-cell aggregations verified against Python H3 library.
+### Increment 7: ClickHouse Cold Store (Objective 2) - DONE (see section 8b)
 
 ### Increment 8: Hourly Buckets & Rolling Windows
 * Incremental materialized views maintaining hourly aggregates (`SUM` for rain, `AVG` for soil moisture, `MAX` for wind/discharge).

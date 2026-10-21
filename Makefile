@@ -1,4 +1,4 @@
-.PHONY: test test-unit test-contract test-integration test-perf test-all lint fmt typecheck up down clean
+.PHONY: test test-unit test-contract test-integration test-perf test-all lint fmt typecheck up down clean demo-hot rebuild-hot
 
 # ── Testing ──────────────────────────────────────────────────────────
 test: test-unit  ## Default: run unit tests only (< 10 s)
@@ -28,6 +28,13 @@ fmt:  ## Auto-format and fix
 
 typecheck:
 	uv run mypy src
+
+# ── Hot tier (Increment 9) ───────────────────────────────────────────
+demo-hot:  ## Build one cell's state hour by hour in Redis; wipe + rebuild from ClickHouse
+	uv run python scripts/hot_demo.py
+
+rebuild-hot:  ## Repopulate Redis from ClickHouse (all cells; wipes the hot tier first)
+	uv run python -m disaster_intel.storage.rebuild --clear
 
 # ── Infrastructure ───────────────────────────────────────────────────
 up:  ## Start ClickHouse, Redis, Redpanda

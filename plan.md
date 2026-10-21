@@ -256,6 +256,12 @@ Every increment follows the same discipline:
 | **Tests written first** | Hot windows equal oracle after replaying a stream; expired buckets evicted; applying one observation twice changes nothing; wiping Redis and rebuilding from cold tier → identical state; read/write latency percentiles and memory-per-cell in budget |
 | **Done when** | Hot read and write latency reported as average, p50, p95, p99 |
 
+> **As built (Increment 9):** the hot tier stores compressed *observations* per (cell, variable,
+> source) and computes windows at read time; a per-bucket aggregate ring cannot make
+> "applying one observation twice changes nothing" true. Measured ~3.9 KB/cell (budget 8 KB),
+> read p95 ~1.3 ms, write p95 ~2 ms. Redis uses `noeviction` so state is never silently dropped.
+> See `INCREMENTS_EXPLANATION.md` section 8d.
+
 ### Increment 10 — State Vector Assembler and Static Layers
 
 | | |

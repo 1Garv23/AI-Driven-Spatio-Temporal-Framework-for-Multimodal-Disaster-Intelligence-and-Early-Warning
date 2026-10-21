@@ -306,11 +306,38 @@ plan.md suggests an incremental materialized view. A plain MV adds every *insert
 
 ---
 
+## 8d. Increment 9: Redis Hot Tier & Rebuild Job (`storage/hot.py`, `rebuild.py`, `tee.py`)
+
+### Purpose
+Third step of Objective 2: the *current* state of every cell, readable in about a millisecond, and provably rebuildable from the cold tier.
+
+### Key Components
+* **[`hot.py`](src/disaster_intel/storage/hot.py)** - `HotStore`: one Redis hash per H3 cell (`ws:v1:<cell>`), one field per (variable, source) holding a zlib-compressed, time-sorted, delta-coded block of float32 observations. `write()`, `windows()` (same signature/shape as `ColdStore.windows`), `evict_expired()`, `clear()`, `dump_cell()`, `memory_usage()`; plus `summarize_latencies()` (average, p50, p95, p99).
+* **[`rebuild.py`](src/disaster_intel/storage/rebuild.py)** - `rebuild_hot_from_cold()` and a CLI (`make rebuild-hot`).
+* **[`tee.py`](src/disaster_intel/storage/tee.py)** - `TeeSink`: writes the cold tier first (the record), then the hot tier.
+
+### Deviation from plan.md (and why)
+plan.md sketches a "bucket ring, ~6.7 KB/cell" (one float per hourly bucket). One float cannot answer SUM/AVG/MAX/MIN, and an aggregate cannot detect a duplicate or undo a revised value, so "applying one observation twice changes nothing" could not hold. The hot tier therefore stores the **observations** (compressed) and computes window aggregates at read time with the same conventions as the cold tier. Measured: **~3.9 KB/cell (~23 MB for 5,930 cells)**, hot read p95 ~1.3 ms, write p95 ~2 ms (budget: 8 KB, 5 ms).
+
+### Conventions (pinned by tests)
+* An observation is identified by (variable, source, ts); re-applying overwrites the same slot (idempotent); a revised value replaces the old one (like `ReplacingMergeTree`).
+* Kept while `bucket_end(ts) > floor_hour(now) - 168 h`. Eviction is lazy on write, plus `evict_expired` and a key TTL.
+* `windows()` raises `HotRangeError` rather than returning a truncated window; the past is the cold tier's job.
+* Redis runs with `maxmemory-policy noeviction` (a test enforces it): silent LRU eviction would make window reads wrong. docker-compose changed accordingly.
+* Single writer per cell (the bus already orders by cell key); readers are always safe.
+
+### Tests
+* `tests/test_hot_unit.py` (unit, `tests/fake_redis.py`): encoding, hypothesis differential test vs `reference_windows`, eviction, idempotency, rebuild, round-trip count, tee sink, latency report.
+* `tests/test_hot_integration.py` (real Redis; the rebuild test also needs ClickHouse): oracle agreement, physical eviction + TTL, byte-identical re-apply, wipe-and-rebuild equals live state and equals ClickHouse windows, eviction-policy guard.
+* `tests/test_hot_perf.py`: memory per cell and hot read/write latency percentiles.
+
+---
+
 ## 9. Current System Status & Test Suite Summary
 
 All quality gates pass with zero warnings or errors:
 
-* **Unit Test Suite**: **79 passed** in **1.86 seconds** (`pytest -m unit`).
+* **Unit Test Suite**: **189 passed** in **~6 seconds** (`pytest -m unit`).
 * **Linter**: `ruff check src tests` (0 errors, 100% clean).
 * **Formatter**: `ruff format --check src tests` (100% compliant across 22 source files).
 * **Type Checker**: `mypy src tests` (Strict typing verified across 22 source files).
@@ -327,8 +354,7 @@ All quality gates pass with zero warnings or errors:
 * Incremental materialized views maintaining hourly aggregates (`SUM` for rain, `AVG` for soil moisture, `MAX` for wind/discharge).
 * Rolling windows: 1h, 6h, 24h, 72h, 7d.
 
-### Increment 9: Redis Hot Tier
-* 7-day circular buffer ring in Redis for sub-millisecond cell feature vector retrieval.
+### Increment 9: Redis Hot Tier & Rebuild Job - DONE (see section 8d)
 
 ### Increments 10–14: Multimodal Fusion, Foundation Model & Warning Engine
 * Cross-attention spatio-temporal fusion, NASA Prithvi geospatial backbone, and early warning lead-time benchmarking.

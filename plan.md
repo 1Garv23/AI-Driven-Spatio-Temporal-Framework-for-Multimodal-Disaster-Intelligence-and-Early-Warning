@@ -273,6 +273,15 @@ Every increment follows the same discipline:
 > **Static layer candidates:** SRTM or Copernicus DEM (elevation/slope), WorldPop
 > or GHSL (population density). Final selection is a decision inside increment 10.
 
+> **As built (Increment 10):** new package `src/disaster_intel/state/`.
+> `FeatureSpec.v1` = 25 dynamic features (5 variables x 5 windows) + 3 static + 1 derived
+> (`compound_saturation = soil_moisture_rootzone__24h x precipitation__72h`) = 29, fingerprinted
+> so a vector saved under another spec fails to load (`SpecMismatchError`). Missing = NaN, never 0.
+> Static layers: elevation = Copernicus DEM GLO-90 via Open-Meteo `/v1/elevation`; slope = plane
+> fit through the cell centre + 6 neighbour centres; population = WorldPop 1 km count raster
+> (GeoTIFF/ASCII) aggregated to cells. `StateAssembler.get_state(cell, as_of, tier)` serves "now"
+> from Redis and any past time from ClickHouse; `compare_tiers` checks they agree.
+
 ---
 
 ## 9. Increments 11–13: Imagery, Redpanda and Historical Replay

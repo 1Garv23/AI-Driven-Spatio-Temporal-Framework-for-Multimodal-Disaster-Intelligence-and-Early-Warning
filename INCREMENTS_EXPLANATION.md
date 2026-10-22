@@ -356,6 +356,8 @@ All quality gates pass with zero warnings or errors:
 
 ### Increment 9: Redis Hot Tier & Rebuild Job - DONE (see section 8d)
 
-### Increments 10–14: Multimodal Fusion, Foundation Model & Warning Engine
+### Increment 10: State Vector Assembler & Static Layers - DONE (see plan.md 'As built (Increment 10)')
+
+### Increments 11–14: Multimodal Fusion, Foundation Model & Warning Engine
 * Cross-attention spatio-temporal fusion, NASA Prithvi geospatial backbone, and early warning lead-time benchmarking.
 

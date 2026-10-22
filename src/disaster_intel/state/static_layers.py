@@ -473,6 +473,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     build.add_argument("--population", help="WorldPop count raster (.tif/.tiff or Esri .asc)")
     build.add_argument("--out", default=str(DEFAULT_STATIC_PATH))
     build.add_argument("--limit", type=int, default=None, help="only the first N cells")
+    build.add_argument("--pause", type=float, default=12.0, help="seconds between API requests")
+    build.add_argument("--elevation-cache", default=".cache/elevation_points.json")
     show = sub.add_parser("show", help="print one cell's static features")
     show.add_argument("--cell", required=True)
     show.add_argument("--path", default=str(DEFAULT_STATIC_PATH))
@@ -491,7 +493,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         source = FunctionElevation(synthetic_ghats_elevation)
         meta = {"elevation": "SYNTHETIC toy terrain (not real data)"}
     else:
-        source = OpenMeteoElevation()
+        from disaster_intel.state.elevation_cache import CachedElevation
+
+        source = CachedElevation(
+            OpenMeteoElevation(max_retries=2, initial_backoff_s=65.0),
+            path=args.elevation_cache,
+            pause_s=args.pause,
+            progress=lambda done, total: print(f"  elevation {done}/{total}", flush=True),
+        )
         meta = {"elevation": "Copernicus DEM GLO-90 via Open-Meteo"}
     density: dict[str, float] | None = None
     if args.population:

@@ -49,6 +49,11 @@ def east_metres(lat: float, lon: float, lat0: float, lon0: float) -> float:
     return (lon - lon0) * METRES_PER_DEGREE * math.cos(math.radians(lat0))
 
 
+def cell_east_metres(cell: str, lat0: float, lon0: float) -> float:
+    lat, lon = h3.cell_to_latlng(cell)
+    return east_metres(lat, lon, lat0, lon0)
+
+
 # ── 1. Slope ─────────────────────────────────────────────────────────
 
 
@@ -84,9 +89,7 @@ def test_too_few_or_collinear_points_give_nan_not_zero() -> None:
 def test_cell_slope_through_real_h3_neighbours_matches_the_plane() -> None:
     lat0, lon0 = h3.cell_to_latlng(CENTRE)
     ring = [CENTRE, *h3.grid_ring(CENTRE, 1)]
-    elevations: dict[str, float | None] = {
-        c: 0.1 * east_metres(*h3.cell_to_latlng(c), lat0, lon0) for c in ring
-    }
+    elevations: dict[str, float | None] = {c: 0.1 * cell_east_metres(c, lat0, lon0) for c in ring}
     assert cell_slope_degrees(CENTRE, elevations) == pytest.approx(PLANE_SLOPE, abs=0.02)
 
 
@@ -94,7 +97,7 @@ def test_cell_slope_tolerates_one_missing_neighbour_but_not_four() -> None:
     lat0, lon0 = h3.cell_to_latlng(CENTRE)
     ring = sorted(h3.grid_ring(CENTRE, 1))
     elevations: dict[str, float | None] = {
-        c: 0.1 * east_metres(*h3.cell_to_latlng(c), lat0, lon0) for c in [CENTRE, *ring]
+        c: 0.1 * cell_east_metres(c, lat0, lon0) for c in [CENTRE, *ring]
     }
     elevations[ring[0]] = None
     assert cell_slope_degrees(CENTRE, elevations) == pytest.approx(PLANE_SLOPE, abs=0.02)
@@ -118,9 +121,7 @@ def test_build_gives_elevation_slope_and_nan_population_by_default() -> None:
     for cell in patch_of_cells():
         f = layers.get(cell)
         assert f.slope_deg == pytest.approx(PLANE_SLOPE, abs=0.05)
-        assert f.elevation_m == pytest.approx(
-            0.1 * east_metres(*h3.cell_to_latlng(cell), lat0, lon0), abs=1e-6
-        )
+        assert f.elevation_m == pytest.approx(0.1 * cell_east_metres(cell, lat0, lon0), abs=1e-6)
         assert math.isnan(f.population_density_km2)  # unknown, NOT zero
 
 

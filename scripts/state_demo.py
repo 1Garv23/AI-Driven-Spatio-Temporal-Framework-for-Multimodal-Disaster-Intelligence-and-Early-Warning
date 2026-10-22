@@ -70,13 +70,26 @@ def show(vector: StateVector, label: str) -> None:
         print(f"  {name:<34}{text:>14}{extra}")
 
 
+def _static_layers():  # type: ignore[no-untyped-def]
+    """Real layers from .cache if built and containing CELL; otherwise synthetic terrain."""
+    from disaster_intel.state.static_layers import DEFAULT_STATIC_PATH, StaticLayers
+
+    if DEFAULT_STATIC_PATH.is_file():
+        real = StaticLayers.load(DEFAULT_STATIC_PATH)
+        if CELL in real and "SYNTHETIC" not in real.meta.get("elevation", ""):
+            print(f"[static layers: REAL, {real.meta.get('elevation')}]")
+            return real
+    print("[static layers: SYNTHETIC terrain]")
+    return build_static_layers([CELL], FunctionElevation(synthetic_ghats_elevation))
+
+
 def main() -> None:
     clock = FakeClock(START)
     hot = HotStore.connect(clock=clock, prefix=f"demo:{uuid.uuid4().hex[:8]}:")
     database = f"demo_{uuid.uuid4().hex[:8]}"
     cold = ColdStore.connect(database=database)
     cold.migrate()
-    layers = build_static_layers([CELL], FunctionElevation(synthetic_ghats_elevation))
+    layers = _static_layers()
     assembler = StateAssembler(layers, hot=hot, cold=cold, clock=clock)
     sink = TeeSink(cold, hot)
     try:
